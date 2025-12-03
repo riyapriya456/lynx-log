@@ -316,9 +316,9 @@ class LFIScanner(BaseScanner):
     async def run(self):
         await event_manager.emit("log", f"[{self.name}] Starting scan...")
         payloads = [
-            "../../../../../../../../etc/passwd", 
+            "../../../../../../../../etc/passwd",
             "../../../../../../../../windows/win.ini",
-            "/etc/passwd", 
+            "/etc/passwd",
             "c:\\windows\\win.ini"
         ]
         tasks = []
@@ -394,7 +394,7 @@ class SecurityHeadersCheck(BaseScanner):
             async with self.context.session.get(self.context.target) as response:
                 headers = response.headers
                 missing_headers = []
-                
+
                 if "strict-transport-security" not in headers:
                     missing_headers.append("Strict-Transport-Security")
                 if "content-security-policy" not in headers:
@@ -405,12 +405,12 @@ class SecurityHeadersCheck(BaseScanner):
                     missing_headers.append("X-Content-Type-Options")
                 if "referrer-policy" not in headers:
                     missing_headers.append("Referrer-Policy")
-                
+
                 if missing_headers:
                     await self.emit_vulnerability(
-                        "Weak Security Headers", 
-                        f"Missing security headers: {', '.join(missing_headers)}", 
-                        "P3", 
+                        "Weak Security Headers",
+                        f"Missing security headers: {', '.join(missing_headers)}",
+                        "P3",
                         "Add missing security headers to HTTP responses.",
                         url=self.context.target
                     )
@@ -430,12 +430,12 @@ class CORSCheck(BaseScanner):
                 resp_headers = response.headers
                 acao = resp_headers.get("access-control-allow-origin", "")
                 acac = resp_headers.get("access-control-allow-credentials", "")
-                
+
                 if "*" in acao and "true" in acac.lower():
                     await self.emit_vulnerability(
-                        "CORS Misconfiguration", 
-                        "Wildcard origin with credentials allowed", 
-                        "P3", 
+                        "CORS Misconfiguration",
+                        "Wildcard origin with credentials allowed",
+                        "P3",
                         "Restrict origins to trusted domains only.",
                         url=self.context.target
                     )
@@ -453,7 +453,7 @@ class CMSScanner(BaseScanner):
             async with self.context.session.get(self.context.target) as response:
                 html_content = await response.text()
                 soup = BeautifulSoup(html_content, 'html.parser')
-                
+
                 meta_gen = soup.find("meta", attrs={"name": "generator"})
                 if meta_gen:
                     content = meta_gen.get("content", "")
@@ -499,7 +499,7 @@ class SeleniumXSSScanner(BaseScanner):
 
     async def run(self):
         await event_manager.emit("log", f"[{self.name}] Starting dynamic XSS scan...")
-        
+
         await event_manager.emit("log", f"[{self.name}] Optimizing {len(self.context.crawled_urls)} crawled URLs...")
         unique_paths = set()
         optimized_endpoints = []
@@ -526,7 +526,7 @@ class SeleniumXSSScanner(BaseScanner):
             for payload in payloads:
                 for injected_url in self.generate_injection_points(endpoint, payload):
                     test_urls.append((injected_url, payload))
-        
+
         if not test_urls:
              await event_manager.emit("log", f"[{self.name}] No parameters found. Attempting query injection on endpoints.")
              for endpoint in optimized_endpoints:
@@ -578,6 +578,7 @@ class SeleniumXSSScanner(BaseScanner):
         chrome_options.add_argument("--disable-plugins")
         chrome_options.add_argument("--disable-images")
         chrome_options.add_argument("--disable-javascript")
+        chrome_options.add_argument("--disk-cache-size=0") # Ensure cache is disabled
         chrome_options.page_load_strategy = 'eager'
         chrome_options.add_argument("--blink-settings=imagesEnabled=false")
 
@@ -586,41 +587,42 @@ class SeleniumXSSScanner(BaseScanner):
         def log_sync(msg):
             event_manager.emit_sync("log", msg)
 
-        def init_driver():
-            log_sync(f"[Selenium] Initializing Chrome Driver...")
-            try:
-                service = Service(ChromeDriverManager().install())
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-                driver.set_page_load_timeout(10)
-                driver.implicitly_wait(2)
-                return driver
-            except Exception as e:
-                log_sync(f"[Selenium] Failed to initialize driver: {e}")
-                return None
+        try:
+            def init_driver():
+                log_sync(f"[Selenium] Initializing Chrome Driver...")
+                try:
+                    service = Service(ChromeDriverManager().install())
+                    driver = webdriver.Chrome(service=service, options=chrome_options)
+                    driver.set_page_load_timeout(10)
+                    driver.implicitly_wait(2)
+                    return driver
+                except Exception as e:
+                    log_sync(f"[Selenium] Failed to initialize driver: {e}")
+                    return None
 
-        self.driver = init_driver()
-        if not self.driver:
-            return [{"error": "Failed to start Selenium driver"}]
+            self.driver = init_driver()
+            if not self.driver:
+                return [{"error": "Failed to start Selenium driver"}]
 
-        log_sync(f"[Selenium] Driver Ready. Executing {len(test_cases)} tests...")
+            log_sync(f"[Selenium] Driver Ready. Executing {len(test_cases)} tests...")
 
-        for i, (target_url, payload) in enumerate(test_cases):
-            if i % 3 == 0 or i == len(test_cases) - 1:
-                log_sync(f"[Selenium] Progress: {i}/{len(test_cases)}")
-            
-            if self.driver is None:
-                self.driver = init_driver()
-                if not self.driver:
-                    results.append({"error": "Driver failed to reinitialize"})
-                    continue
-            
+            for i, (target_url, payload) in enumerate(test_cases):
+                display_payload = payload if len(payload) < 20 else payload[:17] + "..."
+                log_sync(f"[Status] Selenium: {target_url} | Payload: {display_payload}")
+
+                if self.driver is None:
+                    self.driver = init_driver()
+                    if not self.driver:
+                        results.append({"error": "Driver failed to reinitialize"})
+                        continue
+
             try:
                 self.driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
                     'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'
                 })
-                
+
                 self.driver.get(target_url)
-                
+
                 try:
                     WebDriverWait(self.driver, 3).until(EC.alert_is_present())
                     alert = self.driver.switch_to.alert
@@ -648,7 +650,7 @@ class SeleniumXSSScanner(BaseScanner):
                         alert.accept()
                     except:
                         pass
-                
+
             except Exception as e:
                 log_sync(f"[Debug] Selenium Error on {target_url}: {str(e)}")
                 try:
@@ -657,7 +659,8 @@ class SeleniumXSSScanner(BaseScanner):
                     pass
                 self.driver = None
 
-        self.cleanup()
+        finally:
+            self.cleanup()
         return results
 
     def cleanup(self):

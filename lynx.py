@@ -24,6 +24,7 @@ class Dashboard:
         self.vulns = []
         self.max_logs = 50
         self.current_phase = "Initializing"
+        self.current_action = "Ready"
         self.status_message = ""
         self.start_time = None
         self.total_scanners = 0
@@ -74,7 +75,7 @@ class Dashboard:
         if "[Phase]" in message:
             self.current_phase = message.split("]")[1].strip()
         elif "[Status]" in message:
-            pass
+            self.current_action = message.split("]")[1].strip()
 
         if "] Scan complete" in message:
             self.completed_scanners += 1
@@ -156,7 +157,8 @@ class Dashboard:
         p4 = sum(1 for v in self.vulns if v['severity'] == 'P4')
 
         stats = f"[bold red]P1: {p1}[/bold red] | [bold orange1]P2: {p2}[/bold orange1] | [bold yellow]P3: {p3}[/bold yellow] | [bold cyan]P4: {p4}[/bold cyan] | [bold white]Total: {len(self.vulns)}[/bold white]"
-        self.layout["footer"].update(Panel(stats, title="Live Statistics"))
+        content = f"{stats}\n[dim]{self.current_action}[/dim]"
+        self.layout["footer"].update(Panel(content, title="Live Statistics"))
 
         return self.layout
 
