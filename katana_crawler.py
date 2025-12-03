@@ -11,12 +11,30 @@ class KatanaCrawler:
         self.context = context
         self.katana_path = shutil.which("katana")
         if not self.katana_path:
-             self.katana_path = "katana" # Expect it to be in PATH or handled by environment
+             # Try common go bin paths
+             possible_paths = [
+                 os.path.expanduser("~/go/bin/katana"),
+                 "/usr/local/go/bin/katana",
+                 "/go/bin/katana",
+                 "katana"
+             ]
+             for path in possible_paths:
+                 if os.path.exists(path):
+                     self.katana_path = path
+                     break
+             if not self.katana_path:
+                 self.katana_path = "katana" # Last resort, expect in PATH
 
     async def crawl(self, target: str):
-        if not self.katana_path and not shutil.which("katana"):
-             await event_manager.emit("log", "[red][Katana] Error: katana binary not found. Please install projectdiscovery/katana.[/red]")
+        # Double check if binary is executable or exists if it's an absolute path
+        if os.path.isabs(self.katana_path) and not os.path.exists(self.katana_path):
+             await event_manager.emit("log", f"[red][Katana] Error: Binary not found at {self.katana_path}[/red]")
              return
+        elif not shutil.which(self.katana_path):
+             # If it's just "katana" and not in PATH
+             if not os.path.isabs(self.katana_path):
+                  await event_manager.emit("log", "[red][Katana] Error: katana binary not found in PATH. Please install projectdiscovery/katana.[/red]")
+                  return
 
         await event_manager.emit("log", f"[Katana] Starting crawl for: {target}")
 

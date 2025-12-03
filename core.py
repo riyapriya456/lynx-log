@@ -62,7 +62,9 @@ class ScanEngine:
                     await event_manager.emit("log", "[Phase] Active Mapping: Crawling target with Katana...")
                     crawler = KatanaCrawler(context)
                     await crawler.crawl(self.target)
-                else:
+
+                # Ensure target is always in crawled_urls if nothing else found
+                if not context.crawled_urls:
                     context.crawled_urls.add(self.target)
 
                 await event_manager.emit("log", "[Phase] Analysis: Identifying injection points...")
