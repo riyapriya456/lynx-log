@@ -16,6 +16,7 @@ from common import event_manager, print_banner, console
 from core import ScanEngine
 from reporter import Reporter
 from scanners import get_all_scanners, SQLiScanner, SeleniumXSSScanner
+from updater import check_for_updates
 
 class Dashboard:
     def __init__(self):
@@ -320,6 +321,9 @@ async def main_async():
 
 def main():
     try:
+        # Check for updates before starting
+        check_for_updates()
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 

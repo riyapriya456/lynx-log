@@ -25,6 +25,7 @@ class KatanaCrawler:
         await event_manager.emit("log", f"[Katana] Starting crawl for: {target}")
 
         # Prepare arguments
+        # Removed -headless to prevent hanging in headless environments without display
         args = [
             self.katana_path,
             "-u", target,
@@ -36,7 +37,6 @@ class KatanaCrawler:
             "-c", "10",         # Concurrency
             "-timeout", "10",
             "-retry", "1",
-            "-headless",        # Enable headless mode for better coverage
         ]
 
         try:
@@ -46,8 +46,25 @@ class KatanaCrawler:
                 stderr=asyncio.subprocess.PIPE
             )
 
+            # Add timeout to the entire crawl process
+            # Read stdout line by line until process exits or timeout
+            start_time = asyncio.get_event_loop().time()
+            timeout_seconds = 120 # 2 minute max crawl time to prevent stuck UI
+
             while True:
-                line = await process.stdout.readline()
+                if asyncio.get_event_loop().time() - start_time > timeout_seconds:
+                    process.kill()
+                    await event_manager.emit("log", "[red][Katana] Crawl timed out! Killing process.[/red]")
+                    break
+
+                try:
+                    # Wait for a line with a small timeout to allow checking the total timeout
+                    line = await asyncio.wait_for(process.stdout.readline(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    if process.returncode is not None:
+                         break
+                    continue
+
                 if not line:
                     break
 
@@ -85,8 +102,10 @@ class KatanaCrawler:
 
             stderr = await process.stderr.read()
             if stderr:
-                # Log stderr but don't treat all as errors, Katana is chatty
-                pass
+                 # Check for critical errors in stderr
+                 err_text = stderr.decode()
+                 if "panic" in err_text or "fatal" in err_text.lower():
+                      await event_manager.emit("log", f"[red][Katana] Critical Error: {err_text[:200]}[/red]")
 
             await event_manager.emit("log", f"[Katana] Crawl finished. Found {len(self.context.crawled_urls)} URLs.")
 
