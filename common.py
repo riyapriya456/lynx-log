@@ -98,13 +98,20 @@ class EventManager:
             for callback in self.listeners[event_type]:
                 if asyncio.iscoroutinefunction(callback):
                     try:
-                        loop = asyncio.get_event_loop()
+                        # Attempt to get the running loop
+                        try:
+                            loop = asyncio.get_running_loop()
+                        except RuntimeError:
+                            # No running loop, get event loop policy's loop
+                            loop = asyncio.get_event_loop()
+
                         if loop.is_running():
                             asyncio.run_coroutine_threadsafe(callback(data), loop)
                         else:
                             loop.run_until_complete(callback(data))
-                    except Exception:
-                        callback(data)
+                    except Exception as e:
+                        # Fallback if loop handling fails (e.g. if we are in a thread without a loop)
+                         pass
                 else:
                     callback(data)
 
