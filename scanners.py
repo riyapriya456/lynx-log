@@ -503,16 +503,25 @@ class SeleniumXSSScanner(BaseScanner):
         await event_manager.emit("log", f"[{self.name}] Optimizing {len(self.context.crawled_urls)} crawled URLs...")
         unique_paths = set()
         optimized_endpoints = []
-        for url in self.context.crawled_urls:
-            parsed = urllib.parse.urlparse(url)
-            path = parsed.path
-            if path not in unique_paths:
-                unique_paths.add(path)
-                optimized_endpoints.append(url)
-            if len(optimized_endpoints) >= 10:
-                break
 
-        await event_manager.emit("log", f"[{self.name}] Optimized scan: Testing {len(optimized_endpoints)} unique endpoints.")
+        # Prioritize URLs with parameters
+        param_urls = [u for u in self.context.crawled_urls if "?" in u]
+        other_urls = [u for u in self.context.crawled_urls if "?" not in u]
+
+        # Add up to 20 param URLs
+        for url in param_urls:
+            if len(optimized_endpoints) >= 20: break
+            optimized_endpoints.append(url)
+
+        # Fill rest with unique paths
+        for url in other_urls:
+            if len(optimized_endpoints) >= 30: break
+            parsed = urllib.parse.urlparse(url)
+            if parsed.path not in unique_paths:
+                unique_paths.add(parsed.path)
+                optimized_endpoints.append(url)
+
+        await event_manager.emit("log", f"[{self.name}] Optimized scan: Testing {len(optimized_endpoints)} endpoints.")
         await event_manager.emit("log", f"[Status] Launching Browser (may take 5-10s)...")
 
         canary = "LynxXSS"
@@ -523,9 +532,26 @@ class SeleniumXSSScanner(BaseScanner):
 
         test_urls = []
         for endpoint in optimized_endpoints:
+            # Generate URL-based injections
             for payload in payloads:
                 for injected_url in self.generate_injection_points(endpoint, payload):
                     test_urls.append((injected_url, payload))
+
+            # Check for forms on the page and generate form injections
+            # Note: This is a static check before dynamic scan to generate test cases
+            # We use aiohttp to fetch page source quickly
+            try:
+                if "?" not in endpoint: # Prioritize main pages for form check
+                    async with self.context.session.get(endpoint) as resp:
+                        if resp.status == 200:
+                            text = await resp.text()
+                            soup = BeautifulSoup(text, 'html.parser')
+                            if soup.find('form'):
+                                # If form found, add the endpoint itself to be tested with payload in inputs
+                                for payload in payloads:
+                                    test_urls.append((endpoint, payload)) # Special marker: url IS endpoint, payload will be used in inputs
+            except:
+                pass
 
         if not test_urls:
              await event_manager.emit("log", f"[{self.name}] No parameters found. Attempting query injection on endpoints.")
@@ -622,6 +648,39 @@ class SeleniumXSSScanner(BaseScanner):
                 })
 
                 self.driver.get(target_url)
+
+                # If target_url == the original endpoint (no query injection), it might be a form test case
+                # Try to find inputs and inject
+                try:
+                    inputs = self.driver.find_elements("tag name", "input")
+                    for inp in inputs:
+                        try:
+                            if inp.is_displayed() and inp.is_enabled() and inp.get_attribute("type") in ["text", "search", "email", "url"]:
+                                inp.clear()
+                                inp.send_keys(payload)
+                                inp.submit() # Try submitting
+                                # Handle alert immediately after submit
+                                try:
+                                    WebDriverWait(self.driver, 5).until(EC.alert_is_present())
+                                    alert = self.driver.switch_to.alert
+                                    if "LynxXSS" in alert.text or "XSS" in alert.text:
+                                        alert.accept()
+                                        results.append({
+                                            "vuln_type": "DOM/Reflected XSS (Form)",
+                                            "details": f"Payload executed in form input.\nAlert Text: {alert.text}",
+                                            "severity": "P1",
+                                            "remediation": "Sanitize input and use CSP.",
+                                            "url": target_url,
+                                            "payload": payload
+                                        })
+                                        log_sync(f"[bold green][Selenium] VULNERABILITY FOUND: {target_url}[/bold green]")
+                                        break # Found vuln in this form, move next
+                                except:
+                                    pass
+                        except:
+                            pass
+                except:
+                    pass
 
                 try:
                     WebDriverWait(self.driver, 3).until(EC.alert_is_present())
