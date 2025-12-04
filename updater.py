@@ -3,7 +3,7 @@ import subprocess
 from rich.prompt import Confirm
 from common import console
 
-def check_for_updates(repo_url="https://github.com/riyapriya456/lynx-log", branch="jules"):
+def check_for_updates(repo_url="https://github.com/riyapriya456/lynx-log", branch="jules", force=False):
     """
     Checks for updates from the remote git repository.
     """
@@ -30,13 +30,15 @@ def check_for_updates(repo_url="https://github.com/riyapriya456/lynx-log", branc
 
         if local_hash != remote_hash:
             console.print(f"[bold green]Update available![/bold green] (Local: {local_hash[:7]} -> Remote: {remote_hash[:7]})")
-            if Confirm.ask("Do you want to update now?"):
+            if force or Confirm.ask("Do you want to update now?"):
                 console.print("[bold cyan]Updating...[/bold cyan]")
                 subprocess.run(["git", "pull", "origin", branch], check=True)
                 console.print("[bold green]Update successful! Please restart the tool.[/bold green]")
                 os._exit(0)
         else:
             console.print("[bold green]Lynx is up to date.[/bold green]\n")
+            if force:
+                 console.print("[dim]Forcing re-install/check could be implemented here if needed, but git says up to date.[/dim]")
 
     except subprocess.CalledProcessError as e:
         console.print(f"[red]Failed to check for updates: {e}[/red]")

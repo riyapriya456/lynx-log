@@ -191,7 +191,12 @@ async def main_async():
     parser = argparse.ArgumentParser(description="Lynx v1.0 - VAPT Tool")
     parser.add_argument("-u", "--url", help="Target URL")
     parser.add_argument("--quick", action="store_true", help="Run a quick scan (no crawl)")
+    parser.add_argument("--update", action="store_true", help="Check for updates")
     args = parser.parse_args()
+
+    if args.update:
+        check_for_updates(force=True)
+        return
 
     target = args.url
     selected_scanners = get_all_scanners()
@@ -323,8 +328,13 @@ async def main_async():
 
 def main():
     try:
-        # Check for updates before starting
-        check_for_updates()
+        # Check for updates before starting, unless running with specific flags that might conflict or duplicate
+        # Actually main_async parses args, so we should move update check there or parse args earlier.
+        # But for now, let's keep the automatic check here and the manual one in main_async.
+        # To avoid double checking if user passes --update, we can peek at sys.argv
+        import sys
+        if "--update" not in sys.argv:
+             check_for_updates()
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
