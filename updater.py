@@ -17,7 +17,8 @@ def check_for_updates(repo_url="https://github.com/riyapriya456/lynx-log", branc
 
         # Check if inside a git repo
         if subprocess.call(["git", "rev-parse", "--is-inside-work-tree"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) != 0:
-             console.print("[yellow]Not a git repository. Skipping update check.[/yellow]")
+             console.print("[yellow]Auto-update unavailable: Not a git repository.[/yellow]")
+             console.print("[dim]Please clone the repository using git to enable updates:\n  git clone https://github.com/riyapriya456/lynx-log[/dim]")
              return
 
         # Fetch latest changes

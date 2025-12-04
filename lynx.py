@@ -168,6 +168,12 @@ dashboard = Dashboard()
 async def log_handler(message):
     dashboard.add_log(message)
 
+async def status_handler(data):
+    # Data is a dict of scanner_name: status
+    pass # Dashboard doesn't natively render this dict yet, we can add it to logs or specialized view if needed.
+    # For now, let's just log it to debug
+    # dashboard.add_log(f"[Debug] Scanner Status: {data}")
+
 async def vuln_handler(data):
     dashboard.add_log(f"[Debug] Received vulnerability event: {data.get('type')} - {data.get('url')}")
     dashboard.add_vuln(data)
@@ -244,6 +250,7 @@ async def main_async():
     event_manager.subscribe("net_request_start", net_start_handler)
     event_manager.subscribe("net_request_end", net_end_handler)
     event_manager.subscribe("net_request_error", net_error_handler)
+    event_manager.subscribe("scanner_status", status_handler)
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
     payloads_dir = os.path.join(base_dir, "payloads")
@@ -273,13 +280,21 @@ async def main_async():
             live.update(dashboard.generate_layout())
 
     console.print("\n[bold]Scan Summary:[/bold]")
+
+    # Print Scanner Status
+    if engine.scanner_status:
+        console.print("\n[bold cyan]Module Execution Status:[/bold cyan]")
+        for name, status in engine.scanner_status.items():
+            color = "green" if status == "Completed" else "red" if status == "Failed" else "yellow"
+            console.print(f"- {name}: [{color}]{status}[/{color}]")
+
     if dashboard.vulns:
         p1 = sum(1 for v in dashboard.vulns if v['severity'] == 'P1')
         p2 = sum(1 for v in dashboard.vulns if v['severity'] == 'P2')
         p3 = sum(1 for v in dashboard.vulns if v['severity'] == 'P3')
         p4 = sum(1 for v in dashboard.vulns if v['severity'] == 'P4')
 
-        console.print(f"[bold red]Found {len(dashboard.vulns)} vulnerabilities![/bold red]")
+        console.print(f"\n[bold red]Found {len(dashboard.vulns)} vulnerabilities![/bold red]")
         console.print(f"  [red]P1 (Critical): {p1}[/red]")
         console.print(f"  [orange1]P2 (High): {p2}[/orange1]")
         console.print(f"  [yellow]P3 (Medium): {p3}[/yellow]")
@@ -321,7 +336,10 @@ async def main_async():
             except Exception as e:
                 console.print(f"[dim]Could not remove findings.json: {e}[/dim]")
     else:
-        console.print("[bold green]No vulnerabilities found.[/bold green]")
+        if any(s == "Failed" for s in engine.scanner_status.values()):
+             console.print("[bold red]Scan completed with errors. No vulnerabilities found in successful modules.[/bold red]")
+        else:
+             console.print("[bold green]No vulnerabilities found.[/bold green]")
 
     if not task.cancelled():
         console.print("\n[dim]Press Enter to exit...[/dim]")

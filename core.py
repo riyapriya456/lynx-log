@@ -39,6 +39,7 @@ class ScanEngine:
         self.ai_api_key = ai_api_key
         self.semaphore = asyncio.Semaphore(15)
         self.initialized_scanners = []
+        self.scanner_status = {}
 
     async def run(self):
         trace_config = aiohttp.TraceConfig()
@@ -89,6 +90,7 @@ class ScanEngine:
                 for scanner_cls in self.scanners:
                     scanner = scanner_cls(context)
                     self.initialized_scanners.append(scanner)
+                    self.scanner_status[scanner.name] = "Pending"
                     tasks.append(self.run_scanner_wrapper(scanner))
 
                 if not tasks:
@@ -113,14 +115,19 @@ class ScanEngine:
                 self.cleanup_scanners()
 
     async def run_scanner_wrapper(self, scanner):
+        self.scanner_status[scanner.name] = "Running"
         try:
             await event_manager.emit("log", f"[Debug] Starting scanner: {scanner.name}")
             async with self.semaphore:
                 await scanner.run()
+            self.scanner_status[scanner.name] = "Completed"
         except Exception as e:
+            self.scanner_status[scanner.name] = "Failed"
             await event_manager.emit("log", f"[red][Error] Scanner {scanner.name} failed: {e}[/red]")
         finally:
             await event_manager.emit("log", f"[{scanner.name}] Scan complete.")
+            # Emit status update event for dashboard
+            await event_manager.emit("scanner_status", self.scanner_status)
 
     def cleanup_scanners(self):
         for scanner in self.initialized_scanners:
