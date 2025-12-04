@@ -211,8 +211,9 @@ async def main_async():
         console.print("3. Custom: SQL Injection Only")
         console.print("4. Selenium XSS Scan (Dynamic)")
         console.print("5. Full Scan with AI Analysis")
+        console.print("6. Update Tool")
 
-        choice = Prompt.ask("Select an option", choices=["1", "2", "3", "4", "5"], default="1")
+        choice = Prompt.ask("Select an option", choices=["1", "2", "3", "4", "5", "6"], default="1")
 
         if choice == "1":
             selected_scanners = get_all_scanners()
@@ -229,6 +230,9 @@ async def main_async():
         elif choice == "5":
             selected_scanners = get_all_scanners()
             crawl_enabled = True
+        elif choice == "6":
+            check_for_updates(force=True)
+            os._exit(0)
 
         target = Prompt.ask("[cyan]Enter target URL[/cyan]")
 

@@ -104,6 +104,9 @@ class KatanaCrawler:
                             url = data.get("request", {}).get("endpoint")
 
                             if url:
+                                # Debug: Log raw URL if needed
+                                # await event_manager.emit("log", f"[Debug] Katana Raw: {url}")
+
                                 # Clean up URL
                                 parsed = urllib.parse.urlparse(url)
                                 if parsed.scheme and parsed.netloc:

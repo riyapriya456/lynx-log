@@ -32,7 +32,12 @@ def check_for_updates(repo_url="https://github.com/riyapriya456/lynx-log", branc
             console.print(f"[bold green]Update available![/bold green] (Local: {local_hash[:7]} -> Remote: {remote_hash[:7]})")
             if force or Confirm.ask("Do you want to update now?"):
                 console.print("[bold cyan]Updating...[/bold cyan]")
-                subprocess.run(["git", "pull", "origin", branch], check=True)
+                try:
+                    subprocess.run(["git", "pull", "origin", branch, "--rebase"], check=True)
+                except subprocess.CalledProcessError:
+                    console.print("[yellow]Rebase failed, trying normal pull...[/yellow]")
+                    subprocess.run(["git", "pull", "origin", branch], check=True)
+
                 console.print("[bold green]Update successful! Please restart the tool.[/bold green]")
                 os._exit(0)
         else:
