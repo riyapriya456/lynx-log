@@ -1,0 +1,20 @@
+# Default credentials for authentication bypass
+admin:admin
+admin:password
+admin:password123
+admin:admin123
+admin:123456
+administrator:administrator
+administrator:password
+root:root
+root:password
+root:toor
+test:test
+user:user
+user:password
+guest:guest
+demo:demo
+author:author
+manager:manager
+support:support
+operator:operator

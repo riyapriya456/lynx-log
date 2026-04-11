@@ -1,0 +1,25 @@
+# Password Reset Attack Payloads
+
+# Host Header values for injection
+attacker.com
+evil.com
+localhost
+127.0.0.1
+
+# Token manipulation values
+0000000000
+null
+nil
+undefined
+""
+empty
+
+# CRLF injection in URL
+%0d%0a
+%0a%0d
+\r\n
+
+# Token manipulation headers
+X-Forwarded-Host
+X-Host
+Host

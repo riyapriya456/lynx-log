@@ -1,5 +1,7 @@
 import os
 import asyncio
+import time
+import traceback
 from enum import Enum
 from typing import Dict, List, Callable, Any
 from rich.console import Console
@@ -38,7 +40,11 @@ def debug_log(message):
         return
     try:
         with open(DEBUG_LOG_FILE, "a", encoding="utf-8") as f:
-            timestamp = asyncio.get_event_loop().time() if asyncio.get_event_loop().is_running() else 0
+            try:
+                loop = asyncio.get_running_loop()
+                timestamp = loop.time()
+            except RuntimeError:
+                timestamp = time.time()
             f.write(f"[{timestamp:.2f}] {message}\n")
     except Exception:
         pass
@@ -64,6 +70,9 @@ class EventManager:
     def __init__(self):
         self.listeners: Dict[str, List[Callable]] = {}
         self.main_loop = None
+        self.callback_timeout = 5.0  # seconds
+        self.dead_callbacks: List[Dict[str, Any]] = []
+        self.failed_callback_count = 0
 
     def set_loop(self, loop):
         self.main_loop = loop
@@ -73,28 +82,108 @@ class EventManager:
             self.listeners[event_type] = []
         self.listeners[event_type].append(callback)
 
+    async def _execute_callback_with_timeout(self, callback: Callable, data: Any, event_type: str) -> bool:
+        """
+        Execute a callback with timeout and error isolation.
+        
+        Returns: True if successful, False if failed
+        """
+        try:
+            if asyncio.iscoroutinefunction(callback):
+                # Use asyncio.wait_for for timeout
+                try:
+                    await asyncio.wait_for(
+                        callback(data),
+                        timeout=self.callback_timeout
+                    )
+                    return True
+                except asyncio.TimeoutError:
+                    self.failed_callback_count += 1
+                    self.dead_callbacks.append({
+                        'event_type': event_type,
+                        'callback': str(callback),
+                        'error': 'Timeout',
+                        'timestamp': time.time()
+                    })
+                    if DEBUG_ENABLED:
+                        debug_log(f"[EVENT_ERROR] Callback timeout: {callback} for {event_type}")
+                    return False
+                except Exception as e:
+                    self.failed_callback_count += 1
+                    self.dead_callbacks.append({
+                        'event_type': event_type,
+                        'callback': str(callback),
+                        'error': str(e),
+                        'timestamp': time.time(),
+                        'traceback': traceback.format_exc()
+                    })
+                    if DEBUG_ENABLED:
+                        debug_log(f"[EVENT_ERROR] Callback exception: {e} in {callback}")
+                    return False
+            else:
+                # Synchronous callback
+                try:
+                    callback(data)
+                    return True
+                except Exception as e:
+                    self.failed_callback_count += 1
+                    self.dead_callbacks.append({
+                        'event_type': event_type,
+                        'callback': str(callback),
+                        'error': str(e),
+                        'timestamp': time.time(),
+                        'traceback': traceback.format_exc()
+                    })
+                    if DEBUG_ENABLED:
+                        debug_log(f"[EVENT_ERROR] Sync callback exception: {e} in {callback}")
+                    return False
+        except Exception as e:
+            self.failed_callback_count += 1
+            self.dead_callbacks.append({
+                'event_type': event_type,
+                'callback': str(callback),
+                'error': f'Unexpected error: {str(e)}',
+                'timestamp': time.time(),
+                'traceback': traceback.format_exc()
+            })
+            return False
+
     async def emit(self, event_type: str, data: Any):
         if DEBUG_ENABLED:
             if event_type == "log":
                 debug_log(f"[LOG] {data}")
             elif event_type == "vulnerability":
-                debug_log(f"[VULN] {data.get('type')} - {data.get('url')}")
+                try:
+                    debug_log(f"[VULN] {data.get('type', 'Unknown')} - {data.get('url', 'N/A')}")
+                except (AttributeError, TypeError):
+                    debug_log(f"[VULN] {data}")
             elif event_type == "net_request_error":
                 debug_log(f"[NET_ERR] {data}")
 
         if event_type in self.listeners:
-            for callback in self.listeners[event_type]:
-                if asyncio.iscoroutinefunction(callback):
-                    await callback(data)
-                else:
-                    callback(data)
+            # Execute all callbacks with error isolation
+            tasks = [
+                self._execute_callback_with_timeout(callback, data, event_type)
+                for callback in self.listeners[event_type]
+            ]
+            
+            # Wait for all callbacks to complete (or timeout)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Log if any callbacks failed
+            failed_count = sum(1 for r in results if r is False)
+            if failed_count > 0 and DEBUG_ENABLED:
+                debug_log(f"[EVENT] {failed_count} callbacks failed for {event_type}")
 
     def emit_sync(self, event_type: str, data: Any):
         if DEBUG_ENABLED:
             if event_type == "log":
                 debug_log(f"[LOG] {data}")
             elif event_type == "vulnerability":
-                debug_log(f"[VULN] {data.get('type')} - {data.get('url')}")
+                try:
+                    debug_log(f"[VULN] {data.get('type', 'Unknown')} - {data.get('url', 'N/A')}")
+                except (AttributeError, TypeError):
+                    debug_log(f"[VULN] {data}")
             elif event_type == "net_request_error":
                 debug_log(f"[NET_ERR] {data}")
 
@@ -108,17 +197,56 @@ class EventManager:
                             try:
                                 loop = asyncio.get_running_loop()
                             except RuntimeError:
-                                loop = asyncio.get_event_loop()
+                                loop = None
 
                         if loop and loop.is_running():
-                            asyncio.run_coroutine_threadsafe(callback(data), loop)
+                            # Schedule with timeout wrapper
+                            future = asyncio.run_coroutine_threadsafe(
+                                self._execute_callback_with_timeout(callback, data, event_type),
+                                loop
+                            )
+                            # Don't wait for result in sync context
                         else:
                             # If no loop is running, we can't await a coroutine from sync context easily
                             # unless we run it in a new loop, but that's risky.
                             pass
                     except Exception as e:
-                         pass
+                        self.failed_callback_count += 1
+                        self.dead_callbacks.append({
+                            'event_type': event_type,
+                            'callback': str(callback),
+                            'error': str(e),
+                            'timestamp': time.time(),
+                            'traceback': traceback.format_exc()
+                        })
                 else:
-                    callback(data)
+                    # Synchronous callback
+                    try:
+                        callback(data)
+                    except Exception as e:
+                        self.failed_callback_count += 1
+                        self.dead_callbacks.append({
+                            'event_type': event_type,
+                            'callback': str(callback),
+                            'error': str(e),
+                            'timestamp': time.time(),
+                            'traceback': traceback.format_exc()
+                        })
+    
+    def get_dead_callback_stats(self) -> Dict[str, Any]:
+        """Get statistics about failed callbacks."""
+        return {
+            'total_failed': self.failed_callback_count,
+            'dead_callbacks': len(self.dead_callbacks),
+            'recent_failures': self.dead_callbacks[-10:] if self.dead_callbacks else []
+        }
+
+    def cleanup_dead_callbacks(self):
+        """Clean up old dead callback records (keep last 50)."""
+        if len(self.dead_callbacks) > 50:
+            self.dead_callbacks = self.dead_callbacks[-50:]
+        # Also periodically reset counter to prevent integer overflow
+        if self.failed_callback_count > 10000:
+            self.failed_callback_count = 0
 
 event_manager = EventManager()

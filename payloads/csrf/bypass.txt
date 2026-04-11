@@ -1,0 +1,26 @@
+# CSRF Bypass Techniques
+
+# Method override parameters
+_method=POST
+_method=PUT
+_method=DELETE
+
+# Headers for method override
+X-HTTP-Method-Override: POST
+X-Method-Override: POST
+X-HTTP-Method: POST
+
+# Referer bypass meta tag
+<meta name="referrer" content="no-referrer">
+
+# Content type changes
+application/x-www-form-urlencoded
+multipart/form-data
+text/plain
+application/json
+
+# Token bypass attempts
+# Remove CSRF token entirely
+# Use empty token value
+# Use token from another user
+# Reuse old token

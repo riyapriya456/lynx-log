@@ -1,0 +1,43 @@
+# IDOR Bypass Techniques - Parameter manipulation
+# HTTP Method Changes
+GET->POST
+POST->GET
+PUT
+DELETE
+PATCH
+OPTIONS
+
+# Parameter wrapping
+[id]
+{"id": id}
+{"id": [id]}
+{"id": {"id": id}}
+
+# Encoding techniques
+base64
+md5
+url_encode
+double_url_encode
+
+# API version testing
+/v1/
+/v2/
+/v3/
+/api/v1/
+/api/v2/
+/api/v3/
+
+# Content type changes
+application/json
+application/xml
+text/plain
+
+# File extension tricks
+.json
+.xml
+.config
+.txt
+
+# Wildcard injection
+*
+%2a

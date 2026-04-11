@@ -3,7 +3,8 @@ import os
 import json
 import shutil
 import urllib.parse
-from typing import Set
+import shlex
+from typing import Set, List
 from common import event_manager, console
 
 class KatanaCrawler:
@@ -25,7 +26,37 @@ class KatanaCrawler:
              if not self.katana_path:
                  self.katana_path = "katana" # Last resort, expect in PATH
 
+    def _validate_target(self, target: str) -> bool:
+        """Validate target URL to prevent command injection"""
+        if not target or not isinstance(target, str):
+            return False
+        
+        # Basic URL validation
+        parsed = urllib.parse.urlparse(target)
+        if not parsed.scheme or not parsed.netloc:
+            return False
+        
+        # Only allow http/https
+        if parsed.scheme not in ["http", "https"]:
+            return False
+        
+        # Check for command injection attempts
+        dangerous_chars = [';', '&', '|', '`', '$', '(', ')', '<', '>']
+        if any(char in target for char in dangerous_chars):
+            return False
+        
+        return True
+
+    def _sanitize_args(self, args: List[str]) -> List[str]:
+        """Sanitize subprocess arguments"""
+        return [shlex.quote(arg) for arg in args]
+
     async def crawl(self, target: str):
+        # Validate target to prevent command injection
+        if not self._validate_target(target):
+            await event_manager.emit("log", f"[red][Katana] Invalid target: {target}[/red]")
+            return
+        
         # Double check if binary is executable or exists if it's an absolute path
         if os.path.isabs(self.katana_path) and not os.path.exists(self.katana_path):
              await event_manager.emit("log", f"[red][Katana] Error: Binary not found at {self.katana_path}[/red]")
@@ -53,22 +84,30 @@ class KatanaCrawler:
             "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" # Static User-Agent for WAFs
         ]
 
+        # Sanitize arguments for security
+        # On Windows, shlex.quote is not needed and breaks arguments
+        if os.name == 'nt':
+            safe_args = args  # subprocess handles quoting on Windows
+        else:
+            safe_args = [shlex.quote(arg) for arg in args]
+
         process = None
         try:
             process = await asyncio.create_subprocess_exec(
-                *args,
+                *safe_args,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
+                limit=1024*1024  # Limit output buffer to 1MB
             )
 
-            start_time = asyncio.get_event_loop().time()
+            start_time = asyncio.get_running_loop().time()
             timeout_seconds = 300 # Increased timeout to 5 minutes
 
             buffer = b""
             chunk_size = 4096
 
             while True:
-                if asyncio.get_event_loop().time() - start_time > timeout_seconds:
+                if asyncio.get_running_loop().time() - start_time > timeout_seconds:
                     if process.returncode is None:
                         process.kill()
                         await event_manager.emit("log", "[red][Katana] Crawl timed out! Killing process.[/red]")

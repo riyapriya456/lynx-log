@@ -1,0 +1,14 @@
+# Rate Limit Bypass Headers
+X-Forwarded-For
+X-Forwarded
+X-Forwarded-By
+X-Forwarded-For-Original
+X-Forwarded-Host
+X-Client-IP
+X-Remote-IP
+X-Remote-Addr
+X-Host
+X-Originating-IP
+X-Real-Ip
+True-Client-IP
+CF-Connecting-IP

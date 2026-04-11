@@ -1,5 +1,6 @@
 import asyncio
 import urllib.parse
+import contextlib
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -7,7 +8,7 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoAlertPresentException, UnexpectedAlertPresentException
+from selenium.common.exceptions import TimeoutException, NoAlertPresentException, UnexpectedAlertPresentException, WebDriverException
 
 from .base import BaseScanner
 from common import event_manager, TestingZone
@@ -17,6 +18,7 @@ class SeleniumXSSScanner(BaseScanner):
         super().__init__(context)
         self.zone = TestingZone.ZONE_A
         self.driver = None
+        self._driver_lock = asyncio.Lock()
 
     async def run(self):
         await event_manager.emit("log", f"[{self.name}] Starting dynamic XSS scan...")
@@ -47,6 +49,9 @@ class SeleniumXSSScanner(BaseScanner):
         except Exception as e:
             await event_manager.emit("log", f"[red][{self.name}] Error running Selenium work: {e}[/red]")
             return
+        finally:
+            # Ensure cleanup happens even on error
+            await self._async_cleanup()
 
         for result in results:
             if "error" in result:
@@ -58,7 +63,10 @@ class SeleniumXSSScanner(BaseScanner):
                     severity=result["severity"],
                     remediation=result["remediation"],
                     url=result["url"],
-                    payload=result["payload"]
+                    payload=result["payload"],
+                    confidence=result.get("confidence", 0.98),
+                    observed_behavior=result.get("observed_behavior", "Alert dialog executed in headless Chrome."),
+                    reproduction_steps=result.get("reproduction_steps"),
                 )
 
     def _optimize_endpoints(self):
@@ -69,14 +77,14 @@ class SeleniumXSSScanner(BaseScanner):
         param_urls = [u for u in self.context.crawled_urls if "?" in u]
         other_urls = [u for u in self.context.crawled_urls if "?" not in u]
 
-        # Add up to 20 param URLs
+        # Add up to 16 param URLs
         for url in param_urls:
-            if len(optimized_endpoints) >= 20: break
+            if len(optimized_endpoints) >= 16: break
             optimized_endpoints.append(url)
 
         # Fill rest with unique paths
         for url in other_urls:
-            if len(optimized_endpoints) >= 30: break
+            if len(optimized_endpoints) >= 24: break
             parsed = urllib.parse.urlparse(url)
             if parsed.path not in unique_paths:
                 unique_paths.add(parsed.path)
@@ -93,67 +101,54 @@ class SeleniumXSSScanner(BaseScanner):
                     test_urls.append((injected_url, payload))
         return test_urls
 
-    def _init_driver(self):
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--log-level=3")
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--disable-plugins")
-        chrome_options.add_argument("--disable-images")
-        # chrome_options.add_argument("--disable-javascript") # Removed as XSS requires JS
-
-        chrome_options.add_argument("--disk-cache-size=0")
-        chrome_options.page_load_strategy = 'eager'
-        chrome_options.add_argument("--blink-settings=imagesEnabled=false")
-
-        try:
-            service = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            driver.set_page_load_timeout(10)
-            driver.implicitly_wait(2)
-            return driver
-        except Exception as e:
-            return None
-
     def _selenium_work(self, test_cases):
+        """Synchronous method to run Selenium tests with proper resource management."""
         results = []
         
         def log_sync(msg):
-            event_manager.emit_sync("log", msg)
-
-        log_sync(f"[Selenium] Initializing Chrome Driver...")
-        self.driver = self._init_driver()
+            """Helper to log from sync context."""
+            try:
+                event_manager.emit_sync("log", msg)
+            except Exception:
+                pass
         
-        if not self.driver:
-            return [{"error": "Failed to start Selenium driver"}]
-
-        log_sync(f"[Selenium] Driver Ready. Executing {len(test_cases)} tests...")
-
+        driver = None
         try:
             for i, (target_url, payload) in enumerate(test_cases):
                 display_payload = payload if len(payload) < 20 else payload[:17] + "..."
                 log_sync(f"[Status] Selenium: {target_url} | Payload: {display_payload}")
 
-                if self.driver is None:
-                    self.driver = self._init_driver()
-                    if not self.driver:
-                        results.append({"error": "Driver failed to reinitialize"})
-                        continue
+                # Reinitialize driver if needed
+                if driver is None:
+                    driver = self._init_driver()
+                    if not driver:
+                        results.append({"error": "Driver failed to initialize"})
+                        break  # Exit if driver can't be created
+                    self.driver = driver
 
                 try:
                     # Disable webdriver detection
-                    self.driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
+                    driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
                         'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'
                     })
 
                     # 1. Load the page
                     try:
-                        self.driver.get(target_url)
+                        driver.get(target_url)
                     except TimeoutException:
                         log_sync(f"[Debug] Timeout loading {target_url}")
+                        continue
+                    except WebDriverException as e:
+                        log_sync(f"[Debug] WebDriver error loading {target_url}: {e}")
+                        # Driver might be in bad state, recreate it
+                        try:
+                            driver.quit()
+                        except:
+                            pass
+                        driver = self._init_driver()
+                        if not driver:
+                            break
+                        self.driver = driver
                         continue
                     except Exception as e:
                         log_sync(f"[Debug] Error loading {target_url}: {e}")
@@ -161,8 +156,8 @@ class SeleniumXSSScanner(BaseScanner):
 
                     # 2. Check for Alert (Reflected in URL)
                     try:
-                        WebDriverWait(self.driver, 3).until(EC.alert_is_present())
-                        alert = self.driver.switch_to.alert
+                        WebDriverWait(driver, 3).until(EC.alert_is_present())
+                        alert = driver.switch_to.alert
                         alert_text = alert.text
                         if "LynxXSS" in alert_text:
                             alert.accept()
@@ -183,26 +178,74 @@ class SeleniumXSSScanner(BaseScanner):
                         pass
                     except UnexpectedAlertPresentException:
                         try:
-                            self.driver.switch_to.alert.accept()
+                            driver.switch_to.alert.accept()
                         except:
                             pass
+                    except Exception as e:
+                        log_sync(f"[Debug] Alert check error: {e}")
 
                 except Exception as e:
-                    log_sync(f"[Debug] Selenium Error on {target_url}: {str(e)}")
+                    log_sync(f"[Debug] Unexpected error on {target_url}: {str(e)}")
+                    # Try to recover by recreating driver
                     try:
-                        self.driver.quit()
+                        driver.quit()
                     except:
                         pass
-                    self.driver = None
+                    driver = self._init_driver()
+                    if not driver:
+                        break
+                    self.driver = driver
 
         finally:
-            self.cleanup()
+            # Ensure driver is always cleaned up
+            if driver:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+            self.driver = None
+        
         return results
 
+    def _init_driver(self):
+        """Initialize Chrome driver with proper options."""
+        try:
+            chrome_options = Options()
+            chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--disable-software-rasterizer')
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+            
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            driver.set_page_load_timeout(15)
+            return driver
+        except Exception as e:
+            event_manager.emit_sync("log", f"[red][{self.name}] Failed to initialize driver: {e}[/red]")
+            return None
+
+    async def _async_cleanup(self):
+        """Async wrapper for cleanup."""
+        async with self._driver_lock:
+            if self.driver:
+                try:
+                    await asyncio.get_running_loop().run_in_executor(None, self.driver.quit)
+                except Exception:
+                    pass
+                finally:
+                    self.driver = None
+
     def cleanup(self):
+        """Synchronous cleanup with proper error handling."""
+        # Just quit the driver directly - don't try to use asyncio.run
         if self.driver:
             try:
                 self.driver.quit()
             except Exception:
                 pass
-            self.driver = None
+            finally:
+                self.driver = None

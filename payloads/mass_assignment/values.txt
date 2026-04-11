@@ -1,0 +1,9 @@
+# Mass Assignment Values - Use with parameter names
+true
+false
+1
+0
+admin
+administrator
+root
+superuser

@@ -1,5 +1,6 @@
 /%09/google.com
 /%2f%2fgoogle.com
+https://legitimate.com%40evil.com
 /%2f%5c%2f%67%6f%6f%67%6c%65%2e%63%6f%6d/
 /%5cgoogle.com
 /%68%74%74%70%3a%2f%2f%67%6f%6f%67%6c%65%2e%63%6f%6d

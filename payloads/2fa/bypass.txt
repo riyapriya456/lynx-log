@@ -1,0 +1,31 @@
+# 2FA Bypass Techniques Reference
+
+# Token manipulation
+null
+000000
+blank_code
+empty
+
+# Response manipulation - look for these in responses
+"success": false -> "success": true
+"verified": false -> "verified": true
+"status": "failed" -> "status": "success"
+
+# Status code manipulation
+401 -> 200
+403 -> 200
+4XX -> 200
+
+# Headers to check for token leakage
+X-OTP
+X-Code
+X-Token
+X-Verification-Code
+
+# Referer bypass
+Referer: https://target.com/2fa-page
+
+# Session bypass - check if 2FA can be skipped by:
+# 1. Direct navigation to post-2FA page
+# 2. Reusing old sessions
+# 3. Using a different auth method

