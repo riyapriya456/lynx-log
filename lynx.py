@@ -123,16 +123,33 @@ def generate_report(engine, target, dashboard):
         for v in dashboard.vulns:
             console.print(f"  [{v.get('severity', 'P4')}] {v.get('type', 'Unknown')}: {v.get('url', 'N/A')}")
 
+
+        # We changed findings to be stored in engine.context.findings, and ui.py now
+        # also gets it. However, dashboard.vulns is still populated by the event handler.
+        confirmed = [v for v in dashboard.vulns if v.get("status") == "confirmed" or (not v.get("status") and v.get("severity") in ("P1", "P2"))]
+        informational = [v for v in dashboard.vulns if v.get("status") == "informational" or (not v.get("status") and v.get("severity") in ("P3", "P4"))]
+        suppressed = [v for v in dashboard.vulns if v.get("status") in ("suppressed", "false_positive")]
+
         findings_data = {
-            "scan_id": f"LYNX-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            "target": target,
-            "mode": "active",
-            "timestamp": datetime.datetime.now().isoformat(),
-            "summary": {
-                "total": len(dashboard.vulns),
-                "P1": p1, "P2": p2, "P3": p3, "P4": p4
+            "scan_summary": {
+                "target": target,
+                "started_at": datetime.datetime.now().isoformat(),
+                "finished_at": datetime.datetime.now().isoformat(),
+                "duration_seconds": 0,
+                "total_requests": getattr(dashboard, "total_requests", 0),
+                "requests_saved_by_cache": 0,
+                "confirmed_count": len(confirmed),
+                "informational_count": len(informational),
+                "suppressed_count": len(suppressed)
             },
-            "findings": dashboard.vulns
+            "confirmed_findings": confirmed,
+            "informational_findings": informational,
+            "suppressed_findings": suppressed,
+            "debug": {
+                "request_budget": {},
+                "scanner_metrics": {},
+                "dedupe_stats": {}
+            }
         }
 
         try:
@@ -171,6 +188,20 @@ async def main_async():
     parser.add_argument("--crawl", action="store_true", help="Enable crawling")
     parser.add_argument("-s", "--scanner", help="Specific scanner to run (xss, sqli, full)", default="full")
     parser.add_argument("--scanners", help="Comma-separated list of scanners (e.g., sqli,xss)")
+
+    # New flags
+    parser.add_argument("--report-min-confidence", default="high", choices=["confirmed", "high", "medium", "low", "informational"], help="Minimum confidence to report")
+    parser.add_argument("--include-informational", action="store_true", default=True, help="Include informational findings")
+    parser.add_argument("--include-suppressed", action="store_true", default=False, help="Include suppressed findings in debug")
+    parser.add_argument("--max-requests-total", type=int, default=10000, help="Max requests total")
+    parser.add_argument("--max-requests-per-scanner", type=int, default=1000, help="Max requests per scanner")
+    parser.add_argument("--max-payloads-per-param", type=int, default=8, help="Max payloads per parameter")
+    parser.add_argument("--max-js-files", type=int, default=30, help="Max JS files to analyze")
+    parser.add_argument("--max-selenium-pages", type=int, default=10, help="Max Selenium pages")
+    parser.add_argument("--fast", action="store_true", help="Fast passive checks only")
+    parser.add_argument("--thorough", action="store_true", help="More thorough verification")
+    parser.add_argument("--debug-report", action="store_true", help="Include suppressed findings and scanner reasoning")
+
     args = parser.parse_args()
 
     if args.update:
@@ -285,6 +316,8 @@ async def main_async():
         target, selected_scanners, payloads_dir,
         crawl=crawl_enabled, ai_api_key=ai_api_key
     )
+
+    # Pass config down to ScanContext via a post-initialization mechanism if needed or we assume defaults in governor
     _engine_ref = engine
 
     dashboard.set_scanner_count(len(selected_scanners))

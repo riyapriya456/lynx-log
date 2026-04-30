@@ -172,6 +172,8 @@ class SeleniumXSSScanner(BaseScanner):
                                     "payload": payload
                                 })
                                 log_sync(f"[bold green][Selenium] VULNERABILITY FOUND (URL): {target_url}[/bold green]")
+                                # Break out to stop testing payloads on this parameter
+                                break
                         else:
                             alert.accept()
                     except (TimeoutException, NoAlertPresentException):

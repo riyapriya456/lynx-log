@@ -33,10 +33,10 @@ class SecurityHeadersCheck(BaseScanner):
                     await self.emit_vulnerability(
                         "Weak Security Headers",
                         f"Missing security headers: {', '.join(missing_headers)}",
-                        "P3",
+                        "P4", # Default low unless specified by context
                         "Add missing security headers to HTTP responses.",
                         url=self.context.target,
-                        confidence=0.6,
+                        confidence=0.5, # Forces informational status
                         observed_behavior="One or more hardening headers were absent from the response.",
                         verification="heuristic",
                         reproduction_steps=[

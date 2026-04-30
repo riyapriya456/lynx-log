@@ -1,8 +1,10 @@
 import hashlib
+import time
 import urllib.parse
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from findings import Finding, quality_gate, generate_dedupe_key
 
 from common import TestingZone, event_manager
 from scan_policy import FindingEvidence
@@ -186,12 +188,6 @@ class BaseScanner:
             severity = SEVERITY_MAP.get(vuln_type, "P4")
 
         target_url = url if url else self.context.target
-        unique_component = payload if payload else details
-        unique_key = f"{vuln_type}|{target_url}|{unique_component}"
-        vuln_hash = hashlib.md5(unique_key.encode()).hexdigest()
-        if vuln_hash in self.context.seen_vulns:
-            return
-        self.context.seen_vulns.add(vuln_hash)
 
         if confidence is None:
             confidence = self._estimate_confidence(vuln_type, severity, details or "", payload)
@@ -215,30 +211,64 @@ class BaseScanner:
         if reproduction_steps is None:
             reproduction_steps = evidence_obj.get("reproduction_steps", [])
 
-        data = {
-            "type": vuln_type,
-            "url": target_url,
-            "payload": payload,
-            "details": details,
-            "severity": severity,
-            "scanner": self.name,
-            "zone": self.zone.value,
-            "remediation": remediation or "Apply standard security best practices.",
-            "confidence": round(confidence, 2),
-            "evidence": evidence_obj,
-            "reproduction_steps": reproduction_steps,
-            "request_method": request_method,
-            "response_excerpt": response_excerpt or evidence_obj.get("response_excerpt"),
-            "observed_behavior": observed_behavior or evidence_obj.get("observed_behavior"),
-            "verification": verification or evidence_obj.get("verification"),
-        }
+        # Attempt to extract parameter from URL if query exists and no payload provided
+        extracted_param = None
+        if payload and "?" in target_url:
+            parsed = urllib.parse.urlparse(target_url)
+            query = urllib.parse.parse_qs(parsed.query)
+            for k, v in query.items():
+                if any(payload in val for val in v):
+                    extracted_param = k
+                    break
+
+        if evidence_obj:
+            evidence_obj["verification"] = verification or evidence_obj.get("verification")
+            evidence_obj["response_excerpt"] = response_excerpt or evidence_obj.get("response_excerpt")
+            evidence_obj["observed_behavior"] = observed_behavior or evidence_obj.get("observed_behavior")
+
+        # Create finding
+        finding = Finding(
+            type=vuln_type,
+            title=vuln_type,
+            severity=severity,
+            confidence="high" if confidence >= 0.85 else ("medium" if confidence >= 0.70 else ("low" if confidence >= 0.55 else "informational")),
+            status="unconfirmed", # default
+            url=target_url,
+            method=request_method,
+            parameter=extracted_param, # Extracted from URL
+            payload=payload,
+            evidence=evidence_obj,
+            reproduction_steps=reproduction_steps,
+            remediation=remediation or "Apply standard security best practices.",
+            scanner=self.name,
+            zone=self.zone.value,
+            first_seen=time.time(),
+            impact=details,
+        )
+
+        finding = quality_gate(finding)
+        finding.dedupe_key = generate_dedupe_key(finding)
+
+        if finding.dedupe_key in self.context.seen_vulns:
+            return
+
+        self.context.seen_vulns.add(finding.dedupe_key)
+
+        if not hasattr(self.context, 'findings'):
+            self.context.findings = []
+        self.context.findings.append(finding.to_dict())
+
+        data = finding.to_dict()
 
         try:
             await event_manager.emit("vulnerability", data)
-            await event_manager.emit(
-                "log",
-                f"[red][{severity}] {vuln_type} found in {self.zone.name} (confidence {confidence:.2f})![/red]",
-            )
+            if finding.status == "confirmed":
+                await event_manager.emit(
+                    "log",
+                    f"[red][{severity}] {vuln_type} found in {self.zone.name} (confidence {confidence:.2f})![/red]",
+                )
+            elif finding.status == "informational":
+                await event_manager.emit("log", f"[cyan][Info] {vuln_type} identified for review.[/cyan]")
         except Exception as e:
             await event_manager.emit("log", f"[red][Error] Failed to emit vulnerability: {e}[/red]")
 
