@@ -408,17 +408,18 @@
                 <span class="stat-value">{{ stats.P3 }}</span>
                 <span class="stat-label">Medium</span>
             </div>
-            <div class="stat-card glass p4">
-                <span class="stat-value">{{ stats.P4 }}</span>
-                <span class="stat-label">Info</span>
+            <div class="stat-card glass p4" style="border-left-color: var(--info);">
+                <span class="stat-value" style="color: var(--info);">{{ stats.Informational }}</span>
+                <span class="stat-label" style="color: var(--info);">Info Leads</span>
             </div>
         </div>
 
         <section class="findings-section">
+            <h2 style="color: var(--text-primary); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1.5rem;">Confirmed Vulnerabilities</h2>
             {% if not grouped_findings %}
             <div class="glass" style="padding: 4rem; text-align: center; border-radius: 12px;">
-                <h3 style="color: var(--low); font-size: 1.5rem; margin-bottom: 1rem;">No Vulnerabilities Found</h3>
-                <p style="color: var(--text-secondary);">Great job! No security issues were detected during this scan.
+                <h3 style="color: var(--low); font-size: 1.5rem; margin-bottom: 1rem;">No Confirmed Vulnerabilities Found</h3>
+                <p style="color: var(--text-secondary);">Great job! No confirmed high-confidence security issues were detected. Check the Informational section for manual leads.
                 </p>
             </div>
             {% else %}
@@ -493,6 +494,114 @@
             </div>
             {% endfor %}
             {% endif %}
+        </section>
+
+        <section class="findings-section" style="margin-top: 3rem;">
+            <h2 style="color: var(--text-primary); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1.5rem;">Informational Leads & Manual Verification</h2>
+            {% if not grouped_informational %}
+            <div class="glass" style="padding: 4rem; text-align: center; border-radius: 12px;">
+                <p style="color: var(--text-secondary);">No informational leads found.</p>
+            </div>
+            {% else %}
+            {% for type, findings in grouped_informational.items() %}
+            {% set first = findings[0] %}
+            {% set meta = vuln_db.get(type, vuln_db['DEFAULT']) %}
+
+            <div class="finding-card glass" style="border-left: 4px solid var(--info);">
+                <div class="finding-header" onclick="toggleFinding(this)">
+                    <div class="finding-title">
+                        <span class="badge bg-p4" style="background: rgba(59, 130, 246, 0.2); color: var(--info);">Info</span>
+                        {{ type }}
+                        <span style="color: var(--text-secondary); font-size: 0.9rem; font-weight: normal; margin-left: 0.5rem;">({{ findings|length }} instances)</span>
+                    </div>
+                    <span style="color: var(--text-secondary); transition: transform 0.2s;">▼</span>
+                </div>
+                <div class="finding-body">
+                    <div class="grid-2">
+                        <div>
+                            <div class="field">
+                                <span class="field-label">Description</span>
+                                <div class="field-content">{{ meta.summary }}</div>
+                            </div>
+                            <div class="field">
+                                <span class="field-label">Remediation</span>
+                                <div class="field-content">{{ meta.remediation }}</div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="field">
+                                <span class="field-label">Impact</span>
+                                <div class="field-content">{{ meta.impact_cat }}</div>
+                            </div>
+                            <div class="field">
+                                <span class="field-label">References</span>
+                                <div class="field-content" style="font-size: 0.85rem;">{{ meta.references }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <span class="field-label">Affected Instances</span>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th style="width: 50%;">URL</th>
+                                        <th style="width: 50%;">Details</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for f in findings %}
+                                    <tr>
+                                        <td><a href="{{ f.url }}" target="_blank" class="url-cell">{{ f.url }}</a></td>
+                                        <td>
+                                            {% if f.payload %}
+                                            <span class="payload-cell">{{ f.payload }}</span>
+                                            {% else %}
+                                            <span style="color: var(--text-secondary); font-style: italic;">{{ f.details }}</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% endif %}
+        </section>
+
+        <section class="findings-section" style="margin-top: 3rem;">
+            <h2 style="color: var(--text-secondary); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1.5rem;">Suppressed Noise / False Positives</h2>
+            <div class="finding-card glass" style="border-left: 4px solid var(--text-secondary);">
+                <div class="finding-header" onclick="toggleFinding(this)">
+                    <div class="finding-title">
+                        <span style="color: var(--text-secondary);">View Suppressed Findings ({{ stats.Suppressed }})</span>
+                    </div>
+                    <span style="color: var(--text-secondary); transition: transform 0.2s;">▼</span>
+                </div>
+                <div class="finding-body">
+                    {% if not grouped_suppressed %}
+                        <p style="color: var(--text-secondary);">No suppressed findings.</p>
+                    {% else %}
+                        {% for type, findings in grouped_suppressed.items() %}
+                            <h4 style="margin-top: 1rem; color: var(--text-primary);">{{ type }} ({{ findings|length }})</h4>
+                            <ul>
+                                {% for f in findings[:10] %}
+                                    <li style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.5rem;">
+                                        <strong>{{ f.url }}</strong>: {{ f.reason_for_suppression }}
+                                    </li>
+                                {% endfor %}
+                                {% if findings|length > 10 %}
+                                    <li style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.5rem;">...and {{ findings|length - 10 }} more.</li>
+                                {% endif %}
+                            </ul>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+            </div>
         </section>
 
         <footer>

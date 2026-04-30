@@ -331,17 +331,24 @@ class Reporter:
             target = self.context.target
             ai_summary = self.context.ai_summary
             normalized_vulns = [self._normalize_finding(v) for v in vulns if isinstance(v, dict)]
-            grouped_findings = self._group_findings(normalized_vulns)
-            deduped_vulns = [finding for findings in grouped_findings.values() for finding in findings]
+
+            # Split findings by status
+            confirmed_vulns = [v for v in normalized_vulns if v.get("status") == "confirmed"]
+            informational_vulns = [v for v in normalized_vulns if v.get("status") == "informational"]
+            suppressed_vulns = [v for v in normalized_vulns if v.get("status") in ["suppressed", "false_positive"]]
+
+            grouped_confirmed = self._group_findings(confirmed_vulns)
+            grouped_informational = self._group_findings(informational_vulns)
+            grouped_suppressed = self._group_findings(suppressed_vulns)
+
             stats = {
-                "P1": sum(1 for v in deduped_vulns if v.get('severity') == 'P1'),
-                "P2": sum(1 for v in deduped_vulns if v.get('severity') == 'P2'),
-                "P3": sum(1 for v in deduped_vulns if v.get('severity') == 'P3'),
-                "P4": sum(1 for v in deduped_vulns if v.get('severity') == 'P4'),
-                "Total": len(deduped_vulns),
-                "AverageConfidence": round(
-                    sum(v.get("confidence", 0.6) for v in deduped_vulns) / len(deduped_vulns), 2
-                ) if deduped_vulns else 0.0,
+                "P1": sum(1 for v in confirmed_vulns if v.get('severity') == 'P1'),
+                "P2": sum(1 for v in confirmed_vulns if v.get('severity') == 'P2'),
+                "P3": sum(1 for v in confirmed_vulns if v.get('severity') == 'P3'),
+                "P4": sum(1 for v in confirmed_vulns if v.get('severity') == 'P4'),
+                "Total": len(confirmed_vulns),
+                "Informational": len(informational_vulns),
+                "Suppressed": len(suppressed_vulns),
             }
 
             html_content = template.render(
@@ -349,12 +356,13 @@ class Reporter:
                 date=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 version=VERSION,
                 stats=stats,
-                grouped_findings=grouped_findings,
+                grouped_findings=grouped_confirmed,
+                grouped_informational=grouped_informational,
+                grouped_suppressed=grouped_suppressed,
                 vuln_db=VULN_DB,
                 ai_summary=ai_summary,
                 report_summary={
-                    "total_findings": len(deduped_vulns),
-                    "average_confidence": stats["AverageConfidence"],
+                    "total_findings": len(confirmed_vulns),
                 },
             )
 

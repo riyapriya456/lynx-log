@@ -267,30 +267,46 @@ class SQLiScanner(BaseScanner):
         except Exception:
             pass
 
-    async def check_error_based(self, payload, url=None):
+    async def check_error_based(self, payload, url=None, baseline_text=None):
         if not url:
             return
         try:
+            # Measure baseline if not provided
+            if not baseline_text:
+                try:
+                    parsed = urllib.parse.urlparse(url)
+                    query = urllib.parse.parse_qs(parsed.query)
+                    if query:
+                        baseline_query = urllib.parse.urlencode({k: v[0].replace(payload, '') for k, v in query.items() if v})
+                        baseline_url = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, baseline_query, parsed.fragment))
+                        async with self.context.session.get(baseline_url, timeout=15) as response:
+                            baseline_text = await response.text()
+                except Exception:
+                    baseline_text = ""
+                    pass
+
             async with self.context.session.get(url, timeout=15) as response:
                 text = await response.text()
                 if self.is_vulnerable(text):
-                    await self.emit_vulnerability(
-                        "SQL Injection",
-                        f"Error-based SQLi detected.\nURL: {url}\nPayload: {payload}",
-                        "P1",
-                        "Use parameterized queries (prepared statements).",
-                        url=url,
-                        payload=payload,
-                        confidence=0.98,
-                        response_excerpt=text[:500],
-                        observed_behavior="Database error markers returned after the injected payload was sent.",
-                        verification="direct",
-                        reproduction_steps=[
-                            "Open the affected URL with parameters.",
-                            "Replay the payload against the vulnerable parameter.",
-                            "Inspect the response for SQL error messages.",
-                        ],
-                    )
+                    # Check that the error wasn't already in the baseline text
+                    if not baseline_text or not self.is_vulnerable(baseline_text):
+                        await self.emit_vulnerability(
+                            "SQL Injection",
+                            f"Error-based SQLi detected.\nURL: {url}\nPayload: {payload}",
+                            "P1",
+                            "Use parameterized queries (prepared statements).",
+                            url=url,
+                            payload=payload,
+                            confidence=0.98,
+                            response_excerpt=text[:500],
+                            observed_behavior="Database error markers returned after the injected payload was sent.",
+                            verification="direct",
+                            reproduction_steps=[
+                                "Open the affected URL with parameters.",
+                                "Replay the payload against the vulnerable parameter.",
+                                "Inspect the response for SQL error messages.",
+                            ],
+                        )
         except Exception:
             pass
 

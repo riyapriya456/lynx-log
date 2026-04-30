@@ -96,13 +96,25 @@ class OpenRedirectScanner(BaseScanner):
                 parsed.params, new_query, parsed.fragment
             ))
             
-            await self.check_redirect_direct(test_url, payload)
+            await self.check_redirect_direct(test_url, payload, original_url)
         except Exception:
             pass
 
-    async def check_redirect_direct(self, url, payload):
+    async def check_redirect_direct(self, url, payload, original_url=None):
         """Make request and check for redirect behavior."""
+        if not original_url:
+             original_url = url
         try:
+            # First, fetch baseline
+            baseline_status = None
+            baseline_location = None
+            try:
+                async with self.context.session.get(original_url, allow_redirects=False, timeout=10) as baseline_response:
+                    baseline_status = baseline_response.status
+                    baseline_location = baseline_response.headers.get('Location', '')
+            except Exception:
+                pass
+
             async with self.context.session.get(url, allow_redirects=False, timeout=10) as response:
                 status = response.status
                 location = response.headers.get('Location', '')
@@ -110,15 +122,19 @@ class OpenRedirectScanner(BaseScanner):
                 # Check for redirect status codes
                 if status in [301, 302, 303, 307, 308]:
                     if self._is_google_redirect(location):
-                        # Store for Selenium verification
-                        self.potential_redirects.append({
-                            'url': url,
-                            'payload': payload,
-                            'location': location,
-                            'status': status
-                        })
-                        await event_manager.emit("log", f"[{self.name}] Potential redirect found: {url[:60]}...")
-                        return
+                        # Ensure baseline wasn't already redirecting to google
+                        if not baseline_location or not self._is_google_redirect(baseline_location):
+                            # Store for Selenium verification
+                            self.potential_redirects.append({
+                                'url': url,
+                                'payload': payload,
+                                'location': location,
+                                'status': status,
+                                'baseline_status': baseline_status,
+                                'baseline_location': baseline_location
+                            })
+                            await event_manager.emit("log", f"[{self.name}] Potential redirect found: {url[:60]}...")
+                            return
                 
                 # Check for meta refresh or JavaScript redirects
                 if status == 200:
@@ -235,6 +251,10 @@ class OpenRedirectScanner(BaseScanner):
                                 "Follow the redirect chain in a browser.",
                                 "Confirm the browser lands on the attacker-controlled destination.",
                             ],
+                                evidence={
+                                    "baseline_status": redirect.get("baseline_status"),
+                                    "baseline_location": redirect.get("baseline_location")
+                                }
                         )
                         await event_manager.emit("log", f"[{self.name}] ✓ VERIFIED redirect to google.com")
                     else:

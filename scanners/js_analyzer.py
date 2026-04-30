@@ -584,20 +584,21 @@ class JSAnalyzerScanner(BaseScanner):
         
         # Emit vulnerabilities (Variable Priority)
         for finding in analysis.vulnerabilities:
-            # Skip low-priority findings in production to reduce noise
-            if finding.severity in ["P1", "P2", "P3"]:
-                await self.emit_vulnerability(
-                    vuln_type=f"JS Vulnerability: {finding.finding_type}",
-                    details=f"**Issue:** {finding.finding_type}\n\n"
-                           f"**Vulnerable Code:**\n```javascript\n{finding.value}\n```\n\n"
-                           f"**Location:** {finding.line_hint}\n\n"
-                           f"**Context:**\n```javascript\n{finding.context}\n```\n\n"
-                           f"**How to Reproduce:** {finding.reproducibility}",
-                    severity=finding.severity,
-                    remediation=finding.remediation,
-                    url=analysis.url,
-                    payload=f"[{finding.finding_type}]"  # Just the type, not the code
-                )
+            # All static JS matches should have "informational" confidence initially.
+            # Quality gate will suppress noise like postMessage or __proto__ without exploit.
+            await self.emit_vulnerability(
+                vuln_type=finding.finding_type,
+                details=f"**Issue:** {finding.finding_type}\n\n"
+                       f"**Vulnerable Code:**\n```javascript\n{finding.value}\n```\n\n"
+                       f"**Location:** {finding.line_hint}\n\n"
+                       f"**Context:**\n```javascript\n{finding.context}\n```\n\n"
+                       f"**How to Reproduce:** {finding.reproducibility}",
+                severity=finding.severity,
+                remediation=finding.remediation,
+                url=analysis.url,
+                payload=finding.value, # pass snippet as payload for tracking
+                confidence=0.5, # Forces informational/low
+            )
         
         # Emit endpoint summary (Info) - NO payload, just details
         if analysis.endpoints:
